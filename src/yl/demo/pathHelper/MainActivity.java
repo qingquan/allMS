@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+
 import wh.TestGetWifiInformation.MapView.OnTargetSettledListner;
 import yl.demo.pathHelper.db.DBManager;
 import yl.demo.pathHelper.db.model.Corner;
@@ -34,6 +35,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 
+
 public class MainActivity extends Activity 
 implements SensorEventListener{
 	
@@ -45,6 +47,7 @@ implements SensorEventListener{
 	private Location mMyLocation;
 	private Context mContext;
 	private EditText mEditTextD;
+	private EditText mDistanceY;
 	
 	private Sensor mAccelerometer;
 	private Sensor mGyro;
@@ -61,12 +64,15 @@ implements SensorEventListener{
     private ArrayList<float[]> accList = new ArrayList<float[]>();
     private ArrayList<float[]> gyroList = new ArrayList<float[]>();
     private ArrayList<float[]> accMeanList = new ArrayList<float[]>();
+    private ArrayList<float[]> accSampleList = new ArrayList<float[]>();
     private ArrayList<float[]> velocityList = new ArrayList<float[]>();
+    private ArrayList<float[]> current1sList = new ArrayList<float[]>();
     private ArrayList<float[]> previous1sList = new ArrayList<float[]>();
     //for test
     private ArrayList<float[]> rawAccList = new ArrayList<float[]>();
 
-    private float[] previousAcc = new float[4];
+    private float[] previousSmoothedAcc = new float[4];
+    private float[] previousFinalAcc = new float[4];
     private float[] previousVelocity = new float[4];
     private float[] previousDistance = new float[4];
     private float[] previous1s = new float[4];
@@ -74,10 +80,13 @@ implements SensorEventListener{
     private boolean initDistanceVar;
     //for test
 	private static final String FILENAME = "gyro_data.txt";
+    private ArrayList<float[]> previousList = new ArrayList<float[]>();
+    private ArrayList<float[]> distanceList = new ArrayList<float[]>();
+
 
     private float startTime;
     
-	@Override
+    @Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
@@ -130,6 +139,7 @@ implements SensorEventListener{
 		mZoomOutButton = (ImageView) findViewById(R.id.zoomout_button);
 		mSearchPathButton = (Button) findViewById(R.id.path_button);
 		mEditTextD = (EditText) findViewById(R.id.distance);
+		mDistanceY = (EditText) findViewById(R.id.distance_Y);
 	}
 	
 	private void initListeners() {
@@ -285,9 +295,10 @@ implements SensorEventListener{
 		}
 		sendEmail();
 	}
-		
+	
+	
 	public void sendEmail(){
-			
+		
 		String dir = Environment.getExternalStorageDirectory().getAbsolutePath();
 		
 		File f = new File(dir+"/acc_data.txt");
@@ -309,12 +320,24 @@ implements SensorEventListener{
 
 	public String convertToString(){
 		String str = "";
+//		for(int i=0; i<accList.size(); i++){
+//			str += String.format("%f", accList.get(i)[0])+" ";
+//			str += String.format("%f", accList.get(i)[1])+" ";
+//			str += String.format("%f", accList.get(i)[2])+" ";
+//			str += String.format("%f", accList.get(i)[3])+"\n";
+//		}
 		for(int i=0; i<rawAccList.size(); i++){
 			str += String.format("%f", rawAccList.get(i)[0])+" ";
 			str += String.format("%f", rawAccList.get(i)[1])+" ";
 			str += String.format("%f", rawAccList.get(i)[2])+" ";
 			str += String.format("%f", rawAccList.get(i)[3])+"\n";
 		}
+//		for(int i=0; i<previousList.size(); i++){
+//			str += String.format("%f", previousList.get(i)[0])+" ";
+//			str += String.format("%f", previousList.get(i)[1])+" ";
+//			str += String.format("%f", previousList.get(i)[2])+" ";
+//			str += String.format("%f", previousList.get(i)[3])+"\n";
+//		}
 		for(int i=0; i<accMeanList.size(); i++){
 			str += String.format("%f", accMeanList.get(i)[0])+" ";
 			str += String.format("%f", accMeanList.get(i)[1])+" ";
@@ -327,6 +350,12 @@ implements SensorEventListener{
 			str += String.format("%f", velocityList.get(i)[2])+" ";
 			str += String.format("%f", velocityList.get(i)[3])+"\n";
 		}
+		for(int i=0; i<distanceList.size(); i++){
+			str += String.format("%f", distanceList.get(i)[0])+" ";
+			str += String.format("%f", distanceList.get(i)[1])+" ";
+			str += String.format("%f", distanceList.get(i)[2])+" ";
+			str += String.format("%f", distanceList.get(i)[3])+"\n";
+		}
 
 		return str;
 	}
@@ -335,9 +364,9 @@ implements SensorEventListener{
 		previous1s[0] = time;
 		previous1s[1] = (float)0; previous1s[2] = (float)0; previous1s[3] = (float)0;
 		
-		previousAcc[0] = time;
-		previousAcc[1] = (float)0; previousAcc[2] = (float)0; previousAcc[3] = (float)0;
-		
+		previousFinalAcc[0] = time;
+		previousFinalAcc[1] = (float)0; previousFinalAcc[2] = (float)0; previousFinalAcc[3] = (float)0;
+
 		previousVelocity[0] = time;
 		previousVelocity[1] = (float)0; previousVelocity[2] = (float)0; previousVelocity[3] = (float)0;
 		
@@ -357,51 +386,58 @@ implements SensorEventListener{
 	
 	//calculate the distance using sampling data
 	public void calculateDistance(float[] currentAcc){
-		if(!initDistanceVar){
-			initDistanceVar(currentAcc[0]);
-			initDistanceVar = true;
-		}
-		
 		float alpha = (float)0.39;
-		float dt = (currentAcc[0]-previousAcc[0])/1000000000;
+		float dt = (currentAcc[0]-previousSmoothedAcc[0])/1000000000;
 		float lowpassAcc[] = new float[4];
+		float mPreviousAcc[] = new float[4];
 		float finalAcc[] = new float[4];
 		float velocity[] = new float[4];
 		float distance[] = new float[4];
 		lowpassAcc[0] = currentAcc[0];
 		finalAcc[0] = currentAcc[0];
+		mPreviousAcc[0] = currentAcc[0];
 		
 		//get rid of the offset first
 //		currentAcc[1] -= 0.0147267; currentAcc[2] += 0.04636421; currentAcc[3] += 0.1491198;
 		
-		//use low-pass filter to smooth the data
+		//use low-pass filter to smooth the data, previous data is smoothed data
 		for(int i=1; i<4; i++){
-			lowpassAcc[i] = alpha*currentAcc[i]+(1-alpha)*previousAcc[i];
+			lowpassAcc[i] = alpha*currentAcc[i]+(1-alpha)*previousSmoothedAcc[i];
 		}
+//		Log.d("myapp", "previous is"+Float.toString(previousSmoothedAcc[1])+"  "+Float.toString(previousSmoothedAcc[2]));
+//		Log.d("myapp", "raw acc is"+Float.toString(currentAcc[1])+"  "+Float.toString(currentAcc[2]));
+//		Log.d("myapp", "the smoothed acc"+Float.toString(lowpassAcc[1])+"  "+Float.toString(lowpassAcc[2]));
 		
 		//for test
+//		accList.add(currentAcc);
 		rawAccList.add(lowpassAcc);
+
+		/*//for test
+		for(int i=1; i<4; i++){
+			mPreviousAcc[i] = previous1s[i];
+		}
+		Log.d("myapp", "smoothing acc is"+Float.toString(lowpassAcc[1])+"  "+Float.toString(lowpassAcc[2]));
+		Log.d("myapp", "the previous 1s mean is"+Float.toString(previous1s[1])+"  "+Float.toString(previous1s[2]));
+*/
+		
+//		//for test
+//		previousList.add(mPreviousAcc);
 		
 		//minus the previous one, only for stationary condition
 		for(int i=1; i<4; i++){
 			finalAcc[i] = lowpassAcc[i] - previous1s[i];
 		}
+//		Log.d("myapp", "the final acc is"+Float.toString(finalAcc[1])+"  "+Float.toString(finalAcc[2]));
 
-
+		
 		//for test
 		accMeanList.add(finalAcc);
 		
 		velocity[0] = currentAcc[0];
 		for(int i=1; i<4; i++){
 //			velocity[i] = (previousAcc[i]+(currentAcc[i]-previousAcc[i])/2)*dt;
-			velocity[i] = previousVelocity[i] + (previousAcc[i]+(finalAcc[i]-previousAcc[i])/2)*dt;
+			velocity[i] = previousVelocity[i] + (previousFinalAcc[i]+(finalAcc[i]-previousFinalAcc[i])/2)*dt;
 		}
-		
-		Log.d("myapp", "previous acc is"+Float.toString(previousAcc[1])+"  "+Float.toString(previousAcc[2]));
-		Log.d("myapp", "the final acc is"+Float.toString(finalAcc[1])+"  "+Float.toString(finalAcc[2]));
-		Log.d("myapp", "the previous velocity is"+Float.toString(previousVelocity[1])+"  "+Float.toString(previousVelocity[2]));
-		Log.d("myapp", "the previous velocity is"+Float.toString(dt));
-		Log.d("myapp", "the previous velocity is"+Float.toString(velocity[1])+"  "+Float.toString(previousVelocity[1] + (previousAcc[1]+(finalAcc[1]-previousAcc[1])/2)*dt));
 		
 		//for test
 		velocityList.add(velocity);
@@ -412,12 +448,17 @@ implements SensorEventListener{
 //			distance[i] = (previousVelocity[i]+(velocity[i]-previousVelocity[i])/2)*dt;
 			distance[i] = previousDistance[i] + (previousVelocity[i]+(velocity[i]-previousVelocity[i])/2)*dt;
 		}
-		Log.d("myapp", "the distance"+Float.toString(distance[1])+Float.toString(distance[2]));
-		System.arraycopy(finalAcc, 0, previousAcc, 0, previousAcc.length);
+		
+		//for test
+		distanceList.add(distance);
+//		Log.d("myapp", "the distance"+Float.toString(distance[1])+Float.toString(distance[2]));
+		System.arraycopy(lowpassAcc, 0, previousSmoothedAcc, 0, lowpassAcc.length);
+		System.arraycopy(finalAcc, 0, previousFinalAcc, 0, finalAcc.length);
 		System.arraycopy(velocity, 0, previousVelocity, 0, previousVelocity.length);
 		System.arraycopy(distance, 0, previousDistance, 0, previousDistance.length);
 
 		mEditTextD.setText(distance[1]+"");
+		mDistanceY.setText(distance[2]+"");
 		//redraw the map
 		mMapView.setMyPosition((float)(mMyLocation.x+distance[1]), (float)(mMyLocation.y+distance[2]));
 //		mMapView.seDtS
@@ -426,53 +467,99 @@ implements SensorEventListener{
 
 	//get the sampling data in the timespan
 	public void getAccSamplingData(float time, float[] linearAcc){
-		//when the list is empty or less than
-		if(accList.isEmpty() || (time-accList.get(0)[0])/1000000000 < 0.2){
-			float mAcc[] = {time, linearAcc[0], linearAcc[1], linearAcc[2]};
-			accList.add(mAcc);
-		}else{ //only use the mean of the data in this timespan
-			float sum_x = 0; float sum_y = 0; float sum_z = 0;
-			for(int i = 0; i < accList.size(); i++){
-				sum_x += accList.get(i)[1];
-				sum_y += accList.get(i)[2];
-				sum_z += accList.get(i)[3];		    					
-			}
-			float mean_x = sum_x/accList.size();
-			float mean_y = sum_y/accList.size();
-			float mean_z = sum_z/accList.size();
-			float mMean[] = {time, mean_x, mean_y, mean_z};
-			
-			//ignore the 15s since starting
-			if((time-startTime)/1000000000 > 15){
-				//add the sampling data, to get the previous 1s mean 
-				previous1sList.add(mMean);
-				
-				if((time-previous1sList.get(0)[0])/1000000000 > 3){
-					previous1s[0] = time;
-					float previous1s_x = 0; float previous1s_y = 0; float previous1s_z = 0;
-					for(int i = 0; i < previous1sList.size(); i++){
-						previous1s_x += previous1sList.get(i)[1];
-						previous1s_y += previous1sList.get(i)[2];
-						previous1s_z += previous1sList.get(i)[3];		    					
-					}
-					previous1s[1] = previous1s_x/previous1sList.size();
-					previous1s[2] = previous1s_y/previous1sList.size();
-					previous1s[3] = previous1s_z/previous1sList.size();
-					
-					Log.d("myapp", "the start calculating time and the startTime"+Float.toString(previous1s[1])+"  " +Float.toString(previous1s[2]));
+		int temp = 0;
+		
+		float mAcc[] = {time, linearAcc[0], linearAcc[1], linearAcc[2]};
 
-					
-					previous1sList.clear();
-					previous1s_x = 0; previous1s_y = 0; previous1s_z = 0;
-				}
-				
-				//call drawing function to redraw the map
-				calculateDistance(mMean);
+
+//		//when the list is empty or less than
+//		if(accList.isEmpty() || (time-accList.get(0)[0])/1000000000 < 0.2){
+//			float mAcc[] = {time, linearAcc[0], linearAcc[1], linearAcc[2]};
+//			accList.add(mAcc);
+//		}else{ //only use the mean of the data in this timespan
+		
+		
+		//bug:lost the new coming data in the sampling period
+//		float sum_x = 0; float sum_y = 0; float sum_z = 0;
+//		for(int i = 0; i < accList.size(); i++){
+//			sum_x += accList.get(i)[1];
+//			sum_y += accList.get(i)[2];
+//			sum_z += accList.get(i)[3];		    					
+//		}
+//		float mean_x = sum_x/accList.size();
+//		float mean_y = sum_y/accList.size();
+//		float mean_z = sum_z/accList.size();
+//		float mMean[] = {time, mean_x, mean_y, mean_z};
+//		accSampleList.add(mMean);
+		//clear the accList data
+//		accList.clear();
+		
+		//ignore the 15s since starting
+		if((time-startTime)/1000000000 > 4){
+			//init some variable
+			if(!initDistanceVar){
+				initDistanceVar(time);
+				System.arraycopy(mAcc, 0, previousSmoothedAcc, 0, mAcc.length);
+//				Log.d("myapp", "raw previous acc is"+Float.toString(previousSmoothedAcc[1])+"  "+Float.toString(previousSmoothedAcc[2]));
+				initDistanceVar = true;
+				return;
 			}
 			
-			//clear the accList data
-			accList.clear();
+			//init previous1slist, collect the previous data
+			if(previous1sList.isEmpty()){
+				previous1sList.add(mAcc);
+			}else{
+				//to get the data falling into the required time interval
+				//potential bug for i+1 index
+				for(int i=0; i<previous1sList.size(); i++){
+					if((time-previous1sList.get(i)[0])/1000000000 < 1){
+						temp = i;
+						break;
+					}else{
+						temp = previous1sList.size()-1;
+					}
+				}
+//				for(int i=0; i<previous1sList.size(); i++){
+//					if(((time-previous1sList.get(i)[0])/1000000000 > 1) && ((time-previous1sList.get(i+1)[0])/1000000000 < 1)){
+//						temp = i+1;
+//						break;
+//					}else{
+//						temp = 0;
+//					}
+//				}
+//				Log.d("myapp", "temp is"+Float.toString(temp)+"  "+Float.toString(previous1sList.size()));
+
+				//calculate the previous1s mean data for ervery new coming data
+				float previous1s_x = 0; float previous1s_y = 0; float previous1s_z = 0;
+				for(int i = temp; i < previous1sList.size(); i++){
+					previous1s_x += previous1sList.get(i)[1];
+					previous1s_y += previous1sList.get(i)[2];
+					previous1s_z += previous1sList.get(i)[3];		    					
+				}
+				previous1s[1] = previous1s_x/(previous1sList.size()-temp);
+				previous1s[2] = previous1s_y/(previous1sList.size()-temp);
+				previous1s[3] = previous1s_z/(previous1sList.size()-temp);
+				
+//				Log.d("myapp", "smoothing acc is"+Float.toString(previous1s[1])+"  "+Float.toString(previous1s[2]));
+
+				//copy the previous1s data into a new array, and add the new coming data into
+				for(int i=temp; i<previous1sList.size(); i++){
+					current1sList.add(previous1sList.get(i));
+				}
+				Log.d("myapp", "temp is"+Float.toString(temp)+"  "+Float.toString(previous1sList.size()));
+
+				current1sList.add(mAcc);
+				previous1sList.clear();
+				previous1sList = (ArrayList<float[]>)current1sList.clone();
+				current1sList.clear();
+//					System.arraycopy(previous1sList, temp, current1sList, 0, previous1sList.size()-temp);
+//					System.arraycopy(current1sList, 0, previous1sList, 0, current1sList.size());
+			}
+			
+			//call drawing function to redraw the map
+			calculateDistance(mAcc);
 		}
+//		}
 	}
 	
 	//calculate angle using magnet and accelerometer

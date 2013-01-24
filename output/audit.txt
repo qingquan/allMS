@@ -1,0 +1,15 @@
+Foremost version 1.5.7 by Jesse Kornblum, Kris Kendall, and Nick Mikus
+Audit File
+
+Foremost started at Wed Jan 23 22:33:31 2013
+Invocation: foremost PathHelper 
+Output directory: /home/jibo/workspace/PathHelper/output
+Configuration file: /etc/foremost.conf
+------------------------------------------------------------------
+File: stdin
+Start: Wed Jan 23 22:33:31 2013
+Length: Unknown
+ 
+Num	 Name (bs=512)	       Size	 File Offset	 Comment 
+
+Interrupt received at Wed Jan 23 23:02:02 2013

@@ -1,3 +1,4 @@
+
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -28,17 +29,17 @@
         <EditText 
             android:id="@+id/distance"
             android:layout_width="0dip"
-        	android:layout_height="wrap_content"
-        	android:layout_weight="1"
-        	android:text="1000"
-        	android:hint="distance"/>
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="1000"
+            android:hint="distance"/>
         <EditText 
             android:id="@+id/distance_Y"
             android:layout_width="0dip"
-        	android:layout_height="wrap_content"
-        	android:layout_weight="1"
-        	android:text="1000"
-        	android:hint="distance_y"/>
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="1000"
+            android:hint="distance_y/>
     </LinearLayout>
     <Button 
         android:id="@+id/path_button"
